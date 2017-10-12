@@ -7,22 +7,16 @@ import pandas as pd
 import tensorflow as tf
 import keras.backend as k
 from itertools import product
-from functools import partial
-from keras.layers import Dense
 from collections import Counter
-from keras.optimizers import Adam
-from keras.regularizers import l2
-from keras.models import Sequential
-from keras.callbacks import TensorBoard
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report
 
 
 # 0 = No data balancing, 1 = Balanced data selction, 2 = Weighted cost function
-balance = 0
+balance = 2
 # 0 = No Fine Tuning, 1 = Data selection adds to training data, 2 = Data selection becomes training set
 fineTuning = 0
+
 
 budget = 10
 quality = 0.85
@@ -32,17 +26,28 @@ class Model:
     def __init__(self, num_input, num_classes):
         self.num_input = num_input
         self.num_classes = num_classes
+        self.X = tf.placeholder('float', [None, self.num_input])
+        self.Y = tf.placeholder('float', [None, self.num_classes])
+        self.weights, self.biases = {}, {}
         self.model = self.create_model()
 
     def create_model(self):
-        model = Sequential()
-        model.add(Dense(256, input_dim=self.num_input))
-        model.add(Dense(256, kernel_regularizer=l2(0.5)))
-        model.add(Dense(256, kernel_regularizer=l2(0.5)))
-        model.add(Dense(256, kernel_regularizer=l2(0.5)))
-        model.add(Dense(256, kernel_regularizer=l2(0.5)))
-        model.add(Dense(self.num_classes, activation='softmax', kernel_regularizer=l2(0.5)))
-        return model
+        self.weights = {
+            'h1': tf.Variable(tf.truncated_normal([self.num_input, 256])),
+            'h2': tf.Variable(tf.truncated_normal([256, 256])),
+            'h3': tf.Variable(tf.truncated_normal([256, 256])),
+            'out': tf.Variable(tf.truncated_normal([256, self.num_classes]))
+        }
+        self.biases = {
+            'b1': tf.Variable(tf.truncated_normal([256])),
+            'b2': tf.Variable(tf.truncated_normal([256])),
+            'b3': tf.Variable(tf.truncated_normal([256])),
+            'out': tf.Variable(tf.truncated_normal([self.num_classes]))
+        }
+        layer_1 = tf.add(tf.matmul(self.X, self.weights['h1']), self.biases['b1'])
+        layer_2 = tf.add(tf.matmul(layer_1, self.weights['h2']), self.biases['b2'])
+        layer_3 = tf.nn.softsign(tf.add(tf.matmul(layer_2, self.weights['h3']), self.biases['b3']))
+        return tf.add(tf.matmul(layer_3, self.weights['out']), self.biases['out'])
 
     @staticmethod
     def weighted_crossentropy(y_true, y_pred, weights):
@@ -58,31 +63,65 @@ class Model:
             final_mask += w * y_p * y_t
         return tf.nn.softmax_cross_entropy_with_logits(labels=y_true, logits=y_pred) * final_mask
 
-    def train(self, version, data, labels, batch_size, test_data, test_labels, weights=np.ones((0, 0)), confuse=False):
+    def train(self, version, data, labels, batch_size, test_data, test_labels, predict_data, weights=np.ones((0, 0)),
+              confuse=False):
+        print(version)
+        beta = 0.1
         if balance == 2:
-            weighted_cost = partial(self.weighted_crossentropy, weights=weights)
-            self.model.compile(loss=weighted_cost, optimizer=Adam(lr=0.1), metrics=['accuracy'])
+            loss = self.weighted_crossentropy(y_true=self.Y, y_pred=self.model, weights=weights)
         else:
-            self.model.compile(loss='categorical_crossentropy', optimizer=Adam(lr=0.1), metrics=['accuracy'])
-        tb_callback = TensorBoard(log_dir='models/' + str(version) + '/Graph', histogram_freq=0, write_graph=True,
-                                 write_images=True)
-        self.model.fit(np.asarray(data), np.asarray(labels), batch_size=batch_size, epochs=100, callbacks=[tb_callback],
-                       verbose=2)
-        if not os.path.isdir('models/' + str(version)):
-            os.mkdir('models/' + str(version))
-        self.model.save('models/' + str(version) + '/model.h5')
-        predictions = self.model.predict(test_data)
-        if confuse:
-            return self.confusion_matrix(predictions, test_labels)
-        else:
-            scores = self.model.evaluate(test_data, test_labels, verbose=0)
-            print('Test loss:', scores[0])
-            print('Test accuracy:', scores[1])
-            return scores[1]
+            loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.model, labels=self.Y)
+        loss += beta + tf.nn.l2_loss(self.weights['h2']) + beta + tf.nn.l2_loss(self.biases['b2'])
+        loss += beta + tf.nn.l2_loss(self.weights['h3']) + beta + tf.nn.l2_loss(self.biases['b3'])
+        loss += beta + tf.nn.l2_loss(self.weights['out']) + beta + tf.nn.l2_loss(self.biases['out'])
+        loss = tf.reduce_mean(loss)
+        optimizer = tf.train.RMSPropOptimizer(learning_rate=0.001).minimize(loss)
+        correct_pred = tf.equal(tf.argmax(self.model, 1), tf.argmax(self.Y, 1))
+        accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
-    def predict(self, version, data):
-        self.model.load_weights('models/' + str(version) + '/model.h5')
-        return self.model.predict(data, verbose=0)
+        init = tf.global_variables_initializer()
+        saver = tf.train.Saver()
+
+        with tf.Session() as sess:
+            sess.run(init)
+            data = self.split(data, batch_size)
+            labels = self.split(labels, batch_size)
+            num_batches = len(data)
+            for epoch in range(1, 250 + 1):
+                avg_loss, avg_acc = 0, 0
+                for batch in range(num_batches):
+                    _, cost, acc = sess.run([optimizer, loss, accuracy],
+                                            feed_dict={self.X: np.asarray(data[batch]), self.Y: labels[batch]})
+                    avg_loss += cost
+                    avg_acc += acc
+                # if epoch % 10 == 0:
+                #     message = 'Epoch: ' + str(epoch) + ' Accuracy: ' + '{:.3f}'.format(avg_acc/num_batches)
+                #     message += ' Loss: ' + '{:.4f}'.format(avg_loss/num_batches)
+                #     print(message)
+            final_acc = sess.run(accuracy, feed_dict={self.X: test_data, self.Y: test_labels})
+            predictions = sess.run(tf.nn.softmax(self.model), feed_dict={self.X: test_data})
+            if confuse:
+                self.confusion_matrix(predictions, test_labels)
+            else:
+                print('Testing Accuracy: ', str(final_acc))
+            # if not os.path.isdir('model/' + str(version)):
+            #     os.mkdir('model/' + str(version))
+            # save_path = saver.save(sess, 'model/' + str(version) + '/model.ckpt')
+            # print("Model saved in file: %s" % save_path)
+            if predict_data == 'skip':
+                return final_acc
+            else:
+                return sess.run(tf.nn.softmax(self.model), feed_dict={self.X: predict_data})
+
+    def predict_batch(self, version, batch_data):
+        init = tf.global_variables_initializer()
+        saver = tf.train.Saver()
+        with tf.Session() as sess:
+            sess.run(init)
+            saver.restore(sess, 'model/' + str(version) + '/model.ckpt')
+            # for data in batch_data:
+            #     predictions.append(sess.run(self.model, feed_dict={self.X: [batch_data]})[0])
+            return sess.run(tf.nn.softmax(self.model), feed_dict={self.X: batch_data})
 
     @staticmethod
     def confusion_matrix(predictions, labels):
@@ -98,10 +137,19 @@ class Model:
         t_labels = pd.Series(y_actu)
         df_confusion = pd.crosstab(t_labels, p_labels, rownames=['Actual'], colnames=['Predicted'], margins=True)
         accuracy = accuracy_score(y_true=y_actu, y_pred=y_pred, normalize=True)
-        print('\nAccuracy = ' + str(accuracy) + '\n')
+        print('Accuracy = ' + str(accuracy) + '\n')
         print(df_confusion)
-        print('\n' + str(classification_report(y_actu, y_pred, digits=4)))
+        print(classification_report(y_actu, y_pred, digits=4))
         return accuracy
+
+    @staticmethod
+    def split(input_array, batch_size):
+        nu_batches = math.trunc(len(input_array) / batch_size)
+        if len(input_array) % batch_size != 0:
+            data = np.pad(input_array, [(0, batch_size - (int(len(input_array) % batch_size))), (0, 0)], 'constant')
+            return np.split(data, nu_batches + 1)
+        else:
+            return np.split(np.asarray(input_array), nu_batches)
 
 
 class MNIST:
@@ -156,7 +204,7 @@ class MNIST:
                                                                                           test_size=percentage)
 
     def get_weights(self, bootstrap=[], smooth_factor=0):
-        if len(bootstrap) == 0:
+        if len(bootstrap) != 0:
             labels = bootstrap
         else:
             labels = self.train_y
@@ -178,9 +226,13 @@ class MNIST:
             final_weights[class_idx][0] = class_weight
         return final_weights
 
-    def check_balance(self):
+    def check_balance(self, input=[]):
         temp_y = []
-        for i in self.train_y:
+        if len(input) == 0:
+            data = self.train_y
+        else:
+            data = input
+        for i in data:
             temp_y.append(np.argmax(i))
         counter = Counter(temp_y)
         print('Balance: ' + str(counter))
@@ -236,48 +288,54 @@ class MNIST:
             self.predict_y = np.delete(self.predict_y, indexes, axis=0)
 
 
-def bootstrap_learn(iteration, data, number_bootstraps, bootstrap_size):
+def bootstrap_learn(iteration, data, number_bootstraps, bootstrap_size, batch):
     accuracies, uncertainty = [], np.zeros((len(data.predict_x)), dtype=np.float64)
     bootstraps_x, bootstraps_y = data.get_bootstraps(number_bootstraps, bootstrap_size)
     for i in range(len(bootstraps_x)):
+        print('\n')
+        data.check_balance(bootstraps_y[i])
         model = Model(784, 10)
         if balance == 2:
-            accuracies.append(model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 10,
-                                          data.test_x, data.test_y, data.get_weights(bootstrap=bootstraps_y[i])))
+            predictions = model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 10,
+                                      data.test_x, data.test_y, data.predict_x,
+                                      data.get_weights(bootstrap=bootstraps_y[i]))
         else:
-            accuracies.append(model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 10,
-                                          data.test_x, data.test_y))
-        predictions = model.predict(str(iteration) + '_' + str(i), data.predict_x)
+            predictions = model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 10,
+                                          data.test_x, data.test_y, data.predict_x)
 
         for j in range(len(predictions)):
-            uncertainty[j] += np.divide(predictions[j][np.argmax(predictions[j])], number_bootstraps)
+            index = np.argmax(predictions[j])
+            temp = predictions[j][index]
+            uncertainty[j] += np.divide(temp, number_bootstraps)
             uncertainty[j] = np.multiply(uncertainty[j], (1 - uncertainty[j]))
-    accuracy = np.average(np.asarray(accuracies))
-    print('Average Accuracy = ' + str(accuracy))
+    # accuracy = np.average(np.asarray(accuracies))
+    data.increase_data(uncertainty, batch)
+    print('\n---------------------------------------------------------------------------------------------------------')
+    print('Size of dataset = ' + str(len(data.train_x)))
+    if balance == 2:
+        accuracy = Model(784, 10).train(iteration, data.train_x, data.train_y, 10, data.test_x, data.test_y, 'skip',
+                                        data.get_weights(), confuse=True)
+    else:
+        accuracy = Model(784, 10).train(iteration, data.train_x, data.train_y, 10, data.test_x, data.test_y, 'skip',
+                                        confuse=True)
     return accuracy, uncertainty
 
 
 def main():
     accuracies = []
+    accuracy = 0
     questions_asked = 0
-    batch = 1
+    batch = 2
 
     data = MNIST('mnist_train.csv', 'mnist_test.csv')
     data.reduce_data(0.99)
 
-    accuracy, uncertainty = bootstrap_learn(questions_asked, data, 10, 100)
-    questions_asked += 1
-    batch *= 2
-    accuracies.append(accuracy)
-
-    while accuracy < quality or questions_asked < budget:
-        data.increase_data(uncertainty, batch)
-        accuracy, uncertainty = bootstrap_learn(questions_asked, data, 10, 100)
+    while accuracy <= quality or questions_asked < budget:
+        accuracy, uncertainty = bootstrap_learn(questions_asked, data, 10, 100, batch)
         questions_asked += 1
         batch *= 2
         accuracies.append(accuracy)
     print(accuracies)
-
 
 
 if __name__ == '__main__':
