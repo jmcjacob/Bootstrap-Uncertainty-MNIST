@@ -1,5 +1,5 @@
-import os
 import csv
+import sys
 import math
 import random
 import numpy as np
@@ -13,17 +13,14 @@ from sklearn.metrics import accuracy_score, classification_report
 
 
 # 0 = No data balancing, 1 = Balanced data selction, 2 = Weighted cost function
-balance = 2
-# 0 = No Fine Tuning, 1 = Data selection adds to training data, 2 = Data selection becomes training set
-fineTuning = 0
-
-
+balance = int(sys.argv[1])
 budget = 10
 quality = 0.85
 
 
 class Model:
     def __init__(self, num_input, num_classes):
+        tf.reset_default_graph()
         self.num_input = num_input
         self.num_classes = num_classes
         self.X = tf.placeholder('float', [None, self.num_input])
@@ -80,7 +77,7 @@ class Model:
         accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
         init = tf.global_variables_initializer()
-        saver = tf.train.Saver()
+        # saver = tf.train.Saver()
 
         with tf.Session() as sess:
             sess.run(init)
@@ -242,7 +239,14 @@ class MNIST:
         for _ in range(number_bootstraps):
             bootstrap_x, bootstrap_y = [], []
             if balance == 1:
-                pass       # TODO Balanced bootstraps
+                classes = [[],[],[],[],[],[],[],[],[],[]]
+                for i in range(len(self.train_x)):
+                    classes[np.argmax(self.train_y[i])] = i
+                for classification in classes:
+                    indexs = random.sample(classification, bootstrap_size / 10)
+                    for index in indexs:
+                        bootstrap_x.append(self.train_x[index])
+                        bootstrap_y.append(self.train_y[index])
             else:
                 indexs = random.sample(range(len(self.train_x)), bootstrap_size)
                 for index in indexs:
@@ -257,9 +261,6 @@ class MNIST:
         # for i in range(len(inputs)):
         #     maxes[i] = inputs[i][np.argmax(inputs[i])]
         indexes = []
-        if fineTuning == 2:
-            self.train_x = np.zeros((0, 784))
-            self.train_y = np.zeros((0, 10))
         if balance == 1:
             num_to_label = int(batch / 10)
             classification = [[], [], [], [], [], [], [], [], [], []]
@@ -301,7 +302,7 @@ def bootstrap_learn(iteration, data, number_bootstraps, bootstrap_size, batch):
                                       data.get_weights(bootstrap=bootstraps_y[i]))
         else:
             predictions = model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 10,
-                                          data.test_x, data.test_y, data.predict_x)
+                                      data.test_x, data.test_y, data.predict_x)
 
         for j in range(len(predictions)):
             index = np.argmax(predictions[j])
@@ -328,9 +329,16 @@ def main():
     batch = 2
 
     data = MNIST('mnist_train.csv', 'mnist_test.csv')
+    if balance == 2:
+        print('Original Accuracy: ' + str(Model(784, 10).train('Original', data.train_x, data.train_y, 10, data.test_x,
+                                                               data.test_y, 'skip', data.get_weights())))
+    else:
+        print('Original Accuracy: ' + str(Model(784, 10).train('Original', data.train_x, data.train_y, 10, data.test_x,
+                                                               data.test_y, 'skip')))
+
     data.reduce_data(0.99)
 
-    while accuracy <= quality or questions_asked < budget:
+    while accuracy < quality or questions_asked != budget:
         accuracy, uncertainty = bootstrap_learn(questions_asked, data, 10, 100, batch)
         questions_asked += 1
         batch *= 2
