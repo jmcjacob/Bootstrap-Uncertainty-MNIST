@@ -13,7 +13,7 @@ from sklearn.metrics import accuracy_score, classification_report
 
 
 # 0 = No data balancing, 1 = Balanced data selction, 2 = Weighted cost function
-balance = 1 # int(sys.argv[1])
+balance = #int(sys.argv[1])
 budget = 10
 quality = 0.85
 
@@ -27,6 +27,7 @@ class Model:
         self.Y = tf.placeholder('float', [None, self.num_classes])
         self.weights, self.biases = {}, {}
         self.model = self.create_model()
+        self.losses = []
 
     def create_model(self):
         self.weights = {
@@ -62,6 +63,8 @@ class Model:
 
     def train(self, version, data, labels, batch_size, test_data, test_labels, predict_data, weights=np.ones((0, 0)),
               confuse=False):
+        data, val_data, labels, val_labels = train_test_split(data, labels, test_size=0.1)
+
         print(version)
         beta = 0.1
         if balance == 2:
@@ -81,20 +84,26 @@ class Model:
 
         with tf.Session() as sess:
             sess.run(init)
+
             data = self.split(data, batch_size)
             labels = self.split(labels, batch_size)
             num_batches = len(data)
-            for epoch in range(1, 250 + 1):
+            epoch = 0
+            while not self.converged():
                 avg_loss, avg_acc = 0, 0
                 for batch in range(num_batches):
                     _, cost, acc = sess.run([optimizer, loss, accuracy],
                                             feed_dict={self.X: np.asarray(data[batch]), self.Y: labels[batch]})
                     avg_loss += cost
                     avg_acc += acc
+                epoch += 1
+                val_acc, val_loss = sess.run([accuracy, loss], feed_dict={self.X: val_data, self.Y: val_labels})
+                self.losses.append(val_loss)
                 # if epoch % 10 == 0:
-                #     message = 'Epoch: ' + str(epoch) + ' Accuracy: ' + '{:.3f}'.format(avg_acc/num_batches)
-                #     message += ' Loss: ' + '{:.4f}'.format(avg_loss/num_batches)
+                #     message = 'Epoch: ' + str(epoch) + ' Validation Accuracy: ' + '{:.3f}'.format(val_acc)
+                #     message += ' Validation Loss: ' + '{:.4f}'.format(val_loss)
                 #     print(message)
+            print('Finished at Epoch ' + str(epoch))
             final_acc = sess.run(accuracy, feed_dict={self.X: test_data, self.Y: test_labels})
             predictions = sess.run(tf.nn.softmax(self.model), feed_dict={self.X: test_data})
             if confuse:
@@ -147,6 +156,15 @@ class Model:
             return np.split(data, nu_batches + 1)
         else:
             return np.split(np.asarray(input_array), nu_batches)
+
+    def converged(self, min_epochs=50, diff=1.0, converge_len=5):
+        if len(self.losses) > min_epochs:
+            losses = self.losses[-converge_len :]
+            for loss in losses[: (converge_len - 1)]:
+                if abs(losses[-1] - loss) > diff:
+                    return False
+            return True
+        return False
 
 
 class MNIST:
@@ -261,7 +279,7 @@ class MNIST:
         # for i in range(len(inputs)):
         #     maxes[i] = inputs[i][np.argmax(inputs[i])]
         indexes = []
-        if balance == 1 and batch % 10 == 0:  # TODO: look to how this can be implimented fairly.
+        if balance == 1 and batch % 10 == 0:  # TODO: look to how this can be implemented fairly.
             num_to_label = int(batch / 10)
             classification = [[], [], [], [], [], [], [], [], [], []]
             for i in range(len(uncertainty)):
@@ -290,18 +308,16 @@ class MNIST:
 
 
 def bootstrap_learn(iteration, data, number_bootstraps, bootstrap_size, batch):
-    accuracies, uncertainty = [], np.zeros((len(data.predict_x)), dtype=np.float64)
+    uncertainty = np.zeros((len(data.predict_x)), dtype=np.float64)
     bootstraps_x, bootstraps_y = data.get_bootstraps(number_bootstraps, bootstrap_size)
     for i in range(len(bootstraps_x)):
-        print('\n')
-        data.check_balance(bootstraps_y[i])
         model = Model(784, 10)
         if balance == 2:
-            predictions = model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 10,
+            predictions = model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 100,
                                       data.test_x, data.test_y, data.predict_x,
                                       data.get_weights(bootstrap=bootstraps_y[i]))
         else:
-            predictions = model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 10,
+            predictions = model.train(str(iteration) + '_' + str(i), bootstraps_x[i], bootstraps_y[i], 100,
                                       data.test_x, data.test_y, data.predict_x)
 
         for j in range(len(predictions)):
@@ -309,24 +325,23 @@ def bootstrap_learn(iteration, data, number_bootstraps, bootstrap_size, batch):
             temp = predictions[j][index]
             uncertainty[j] += np.divide(temp, number_bootstraps)
             uncertainty[j] = np.multiply(uncertainty[j], (1 - uncertainty[j]))
-    # accuracy = np.average(np.asarray(accuracies))
-    data.increase_data(uncertainty, batch)
     print('\n---------------------------------------------------------------------------------------------------------')
+    data.increase_data(uncertainty, batch)
     print('Size of dataset = ' + str(len(data.train_x)))
     if balance == 2:
-        accuracy = Model(784, 10).train(iteration, data.train_x, data.train_y, 10, data.test_x, data.test_y, 'skip',
+        accuracy = Model(784, 10).train(iteration, data.train_x, data.train_y, 100, data.test_x, data.test_y, 'skip',
                                         data.get_weights(), confuse=True)
     else:
-        accuracy = Model(784, 10).train(iteration, data.train_x, data.train_y, 10, data.test_x, data.test_y, 'skip',
+        accuracy = Model(784, 10).train(iteration, data.train_x, data.train_y, 100, data.test_x, data.test_y, 'skip',
                                         confuse=True)
-    return accuracy, uncertainty
+    return accuracy
 
 
 def main():
     accuracies = []
     accuracy = 0
     questions_asked = 0
-    batch = 2
+    batch = 100
 
     data = MNIST('mnist_train.csv', 'mnist_test.csv')
     if balance == 2:
@@ -339,9 +354,8 @@ def main():
     data.reduce_data(0.99)
 
     while accuracy < quality and questions_asked != budget:
-        accuracy, uncertainty = bootstrap_learn(questions_asked, data, 10, 100, batch)
+        accuracy = bootstrap_learn(questions_asked, data, 50, 500, batch)
         questions_asked += 1
-        batch *= 2
         accuracies.append(accuracy)
     print(accuracies)
 
