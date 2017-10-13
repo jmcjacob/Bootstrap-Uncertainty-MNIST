@@ -13,7 +13,7 @@ from sklearn.metrics import accuracy_score, classification_report
 
 
 # 0 = No data balancing, 1 = Balanced data selction, 2 = Weighted cost function
-balance = int(sys.argv[1])
+balance = 1 # int(sys.argv[1])
 budget = 10
 quality = 0.85
 
@@ -261,7 +261,7 @@ class MNIST:
         # for i in range(len(inputs)):
         #     maxes[i] = inputs[i][np.argmax(inputs[i])]
         indexes = []
-        if balance == 1:
+        if balance == 1 and batch % 10 == 0:  # TODO: look to how this can be implimented fairly.
             num_to_label = int(batch / 10)
             classification = [[], [], [], [], [], [], [], [], [], []]
             for i in range(len(uncertainty)):
@@ -338,7 +338,7 @@ def main():
 
     data.reduce_data(0.99)
 
-    while accuracy < quality or questions_asked != budget:
+    while accuracy < quality and questions_asked != budget:
         accuracy, uncertainty = bootstrap_learn(questions_asked, data, 10, 100, batch)
         questions_asked += 1
         batch *= 2
