@@ -13,7 +13,7 @@ from sklearn.metrics import accuracy_score, classification_report
 
 
 # 0 = No data balancing, 1 = Balanced data selction, 2 = Weighted cost function
-balance = #int(sys.argv[1])
+balance = int(sys.argv[1])
 budget = 10
 quality = 0.85
 
@@ -259,9 +259,9 @@ class MNIST:
             if balance == 1:
                 classes = [[],[],[],[],[],[],[],[],[],[]]
                 for i in range(len(self.train_x)):
-                    classes[np.argmax(self.train_y[i])] = i
+                    classes[np.argmax(self.train_y[i])].append(i)
                 for classification in classes:
-                    indexs = random.sample(classification, bootstrap_size / 10)
+                    indexs = random.sample(classification, int(bootstrap_size / 10))
                     for index in indexs:
                         bootstrap_x.append(self.train_x[index])
                         bootstrap_y.append(self.train_y[index])
