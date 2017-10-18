@@ -97,8 +97,6 @@ class Model:
 
         # Checks if weights are present to see if weighted cost function should be used.
         if not self.loss_weights.shape == np.ones((0, 0)).shape:
-
-            # Creates a mask of weights that is applied to the loss.
             nb_cl = len(self.loss_weights)
             final_mask = tf.zeros_like(self.model[..., 0])
             y_pred_max = tf.reduce_max(self.model, axis=-1)
@@ -111,7 +109,7 @@ class Model:
                 y_t = tf.cast(y_pred_max_mat[..., c_t], 'float32')
                 final_mask += w * y_p * y_t
 
-            loss = tf.nn.softmax_cross_entropy_with_logits(labels=self.model, logits=self.Y) * final_mask
+            loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.model, labels=self.Y) * final_mask
         else:
             loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.model, labels=self.Y)
 
@@ -167,7 +165,9 @@ class Model:
     def train(self, train_x, train_y, test_x, test_y, epochs=-1, batch_size=100, val_percent=0.1, confuse=False,
               intervals=10):
         """
-            This method will train the system using the
+            This method will train the system using loss function defined in the "loss" method using the optimiser
+            defined in the "optimise" method. The trained model will then be saved in the save path set in the
+            initialisation.
 
         :param train_x: The training data.
         :param train_y: The labels for the training data.
