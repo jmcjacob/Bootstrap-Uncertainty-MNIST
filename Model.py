@@ -59,6 +59,13 @@ class Model:
         self.verbose = verbose
         self.losses = []
 
+    def __copy__(self):
+        model = Model(self.input_shape, self.num_classes, self.save_path, self.verbose)
+        model.set_loss_params(weights=self.loss_weights, beta=self.beta)
+        model.set_optimise_params(learning_rate=self.learning_rate, decay=self.decay, momentum=self.momentum,
+                                  epsilon=self.epsilon, use_locking=self.use_locking, centered=self.centered)
+        return model
+
     def create_model(self):
         """
             Method that initialises a set of weights and biases and returns a neural network.
@@ -250,7 +257,7 @@ class Model:
             # Returns the accuracy of the model.
             return final_acc
 
-    def predict(self, data):
+    def predict(self, data, load=False):
         """
             Uses a trained model to make prediction on the inputted data.
 
@@ -261,7 +268,8 @@ class Model:
         saver = tf.train.Saver()
         with tf.Session() as sess:
             sess.run(init)
-            saver.restore(sess, self.save_path + '/model.ckpt')
+            if load:
+                saver.restore(sess, self.save_path + '/model.ckpt')
             return sess.run(tf.nn.softmax(self.model), feed_dict={self.X: data})
 
     @staticmethod
@@ -316,7 +324,7 @@ class Model:
         # Retuns the split array.
         return np.split(np.asarray(data), num_batches)
 
-    def converged(self, epochs, min_epochs=50, diff=1.0, converge_len=5):
+    def converged(self, epochs, min_epochs=50, diff=0.5, converge_len=10):
         """
             Method that checks if the model has reached a point of convergence.
 
