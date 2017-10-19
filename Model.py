@@ -60,6 +60,12 @@ class Model:
         self.losses = []
 
     def __copy__(self):
+        """
+            A copy constructor that created a new model with the same parameters as the current model.
+
+        :return: A new model with the same parameters as this model.
+        """
+
         model = Model(self.input_shape, self.num_classes, self.save_path, self.verbose)
         model.set_loss_params(weights=self.loss_weights, beta=self.beta)
         model.set_optimise_params(learning_rate=self.learning_rate, decay=self.decay, momentum=self.momentum,
@@ -73,6 +79,7 @@ class Model:
 
         :return: A Tensorflow graph for a neural network with the given input shape and number of classes.
         """
+
         # Initialises the weights
         self.weights = {
             'h1': tf.Variable(tf.truncated_normal([self.input_shape, 256])),
@@ -145,6 +152,7 @@ class Model:
         :param loss: The loss operation that optimiser will be minimising.
         :return: The operation for model optimisation.
         """
+
         optimiser = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate, decay=self.decay,
                                               momentum=self.momentum, use_locking=self.use_locking,
                                               centered=self.centered)
@@ -162,6 +170,7 @@ class Model:
         :param use_locking: uses locks for update operation.
         :param centered: Gradients are normalized by the estimated variance of the gradient.
         """
+
         self.learning_rate = learning_rate
         self.decay = decay
         self.momentum = momentum
@@ -264,6 +273,7 @@ class Model:
         :param data: The input data, must be in an array with each element being a peice of data.
         :return: An array of equal size to data that contain probability predictions for each class.
         """
+
         init = tf.global_variables_initializer()
         saver = tf.train.Saver()
         with tf.Session() as sess:
