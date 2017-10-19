@@ -57,11 +57,10 @@ class Active:
 
     def run(self, number_bootstraps, bootstrap_size, batch_size):
         accuracies = []
+        self.accuracy, _ = self.train_predict(self.data)
+        accuracies.append(self.accuracy)
         while self.budget != self.questions_asked and self.quality > self.accuracy:
-            self.accuracy, _ = self.train_predict(self.data)
-
             values = np.zeros((len(self.data.predict_x)))
-
             bootstraps = self.data.get_bootstraps(number_bootstraps, bootstrap_size)
             for i in range(len(bootstraps)):
                 print('\nBootstrap: ' + str(i))
@@ -73,6 +72,6 @@ class Active:
 
             self.accuracy, _ = self.train_predict(self.data)
             accuracies.append(self.accuracy)
-            self.questions_asked += 1
+            self.questions_asked = self.questions_asked
 
         return accuracies

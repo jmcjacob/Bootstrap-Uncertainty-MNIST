@@ -70,6 +70,7 @@ class Data:
 
     def reduce_data(self, percentage):
         if self.balance:
+            predict_x, predict_y = [], []
             elements = math.ceil((len(self.train_y) * percentage / 100) / 10)
             indexes = np.array([])
             for classification in range(10):
@@ -82,12 +83,12 @@ class Data:
             delete_indexes = []
             for i in range(len(self.train_x) - 1, -1, -1):
                 if i not in indexes:
-                    self.predict_x.append(self.train_x[i])
-                    self.predict_y.append(self.train_y[i])
+                    predict_x.append(self.train_x[i])
+                    predict_y.append(self.train_y[i])
                     delete_indexes.append(i)
             self.train_x = np.delete(self.train_x, delete_indexes, axis=0)
             self.train_y = np.delete(self.train_y, delete_indexes, axis=0)
-            self.predict_x, self.predict_y = np.asarray(self.predict_x), np.asarray(self.predict_y)
+            self.predict_x, self.predict_y = np.asarray(predict_x), np.asarray(predict_y)
         else:
             self.train_x, self.predict_x, self.train_y, self.predict_y = train_test_split(self.train_x,
                                                                                           self.train_y,
