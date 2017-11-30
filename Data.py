@@ -160,7 +160,7 @@ class Data:
                         bootstrap_y.append(self.train_y[index])
             else:
                 # Get random samples from the training data.
-                indexs = random.sample(range(len(self.train_x)), bootstrap_size)
+                indexs = np.random.choice(range(len(self.train_y)), bootstrap_size, replace=True)
                 for index in indexs:
                     bootstrap_x.append(self.train_x[index])
                     bootstrap_y.append(self.train_y[index])
