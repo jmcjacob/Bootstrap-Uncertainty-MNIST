@@ -149,6 +149,7 @@ class Active:
                 self.ranking(predictions, number_bootstraps)
 
             # Extracts the indexes from the rankings and increases the training data with the indexes.
+            indices = list(range(len(self.data.data_y)))
             indexes = self.get_indexes(batch_size)
             self.data.increase_data(indexes)
 

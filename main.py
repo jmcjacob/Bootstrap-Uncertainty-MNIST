@@ -1,7 +1,7 @@
 import os
 from Data import Data
 from Model import Model
-from Active import Active
+from Random import Active
 
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -23,7 +23,7 @@ def main():
     model = Model(784, 10, 'none', verbose=False)
     model.set_loss_params(weights=mnist.get_weights())
     active = Active(mnist, model, 10, 1.00)
-    accuracies1 += active.run(50, 500, 100)
+    accuracies1 += active.run(50)
     print(accuracies1)
 
 
