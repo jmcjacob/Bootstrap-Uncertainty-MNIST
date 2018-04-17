@@ -65,19 +65,18 @@ class Active:
 
         # Trains the model and computes accuracy and returns the accuracy and the predictions of the model.
         accuracy = model.train(data.train_x, data.train_y, self.data.test_x, self.data.test_y)
-        return accuracy, model.predict(self.data.predict_x)
+        return accuracy#, model.predict(self.data.predict_x)
 
     def run(self, batch_size):
         accuracies = []
 
-        self.accuracy, _ = self.train_predict(self.data)
-        accuracies.append(self.accuracy)
-
         while self.budget != self.questions_asked and self.quality > self.accuracy:
-            indices = list(range(len(self.data.data_y)))
-            self.data.increase_data(random.sample(indices, batch_size))
-            self.accuracy, _ = self.train_predict(self.data)
+            self.accuracy = self.train_predict(self.data)
             accuracies.append(self.accuracy)
+            indices = list(range(len(self.data.predict_y)))
+            self.data.increase_data(random.sample(indices, batch_size))
             self.questions_asked = self.questions_asked + 1
+        self.accuracy = self.train_predict(self.data)
+        accuracies.append(self.accuracy)
         return accuracies
 
